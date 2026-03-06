@@ -1,0 +1,55 @@
+server:
+  port: 8081 # C?ng v?t l? c?a service n?y
+
+spring:
+  application:
+    name: identity-service # C?i "M?c" ?? c?c service kh?c (nh? Gateway) t?m ??n
+
+  kafka:
+    bootstrap-servers: kafka:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: my-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/identity_db
+    username: postgres
+    password: 123456 # Thay b?ng m?t kh?u DB c?a b?n
+    driver-class-name: org.postgresql.Driver # SỬA DÒNG NÀY (Bỏ mysql đi)
+
+  jpa:
+    hibernate:
+      ddl-auto: update # T? ??ng t?o b?ng t? Entity User c?a b?n
+    show-sql: true # Hi?n c?u l?nh SQL ra console ?? b?n d? debug "g?c" v?n ??
+    properties:
+      hibernate:
+        format_sql: true
+        # Thêm dòng này để Hibernate biết chính xác đang nói chuyện với ai
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka # ??a ch? c?a "?ng tr?m" Discovery Server
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true # ?u ti?n d?ng IP ?? c?c service g?i nhau nhanh h?n
+
+# C?u h?nh JWT (T?m th?i ?? ??y tr??c khi chuy?n sang Config Server)
+app:
+  jwt:
+    secret: day_la_cai_key_bi_mat_sieu_cap_vjp_pro_2026_it_nhat_32_ky_tu
+    expiration: 86400000 # 1 ngày (tính bằng ms)
+
+logging:
+  level:
+    org:
+      springframework:
+        security: DEBUG

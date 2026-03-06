@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux: # ĐÂY LÀ CHỖ CẮM CHUẨN MỚI
+          routes:
+            - id: identity-public
+              uri: lb://identity-service
+              order: -1 # THÊM DÒNG NÀY: Số càng nhỏ ưu tiên càng cao
+              predicates:
+                - Path=/identity/api/v1/auth/**
+              filters:
+                - StripPrefix=1
+
+            - id: product-route
+              uri: lb://product-service
+              predicates:
+                - Path=/api/v1/products/**
+
+      # --- CẤU HÌNH HẠ TẦNG (Discovery) ---
+      discovery:
+        locator:
+          enabled: false
+          lower-case-service-id: true
+
+# 🔑 Cấu hình JWT (Dùng để filter hoặc trích xuất thông tin nếu cần)
+jwt:
+  secret: "day_la_cai_key_bi_mat_sieu_cap_vjp_pro_2026_it_nhat_32_ky_tu"
+
+eureka:
+  client:
+    serviceUrl:
+      # TRONG DOCKER: Phải dùng tên container 'discovery-server' thay vì 'localhost'
+      defaultZone: http://discovery-server:8761/eureka/
+
+management:
+  endpoint:
+    gateway:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: "gateway,health,info"
+
+logging:
+  level:
+    org.springframework.cloud.gateway: TRACE
+    org.springframework.http.server.reactive: DEBUG

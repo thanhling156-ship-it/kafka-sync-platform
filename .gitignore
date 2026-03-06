@@ -1,0 +1,1 @@
+# IDE config.idea/*.iml.vscode/# Build folderstarget/bin/# Docker data (quan trọng để không push hàng GB dữ liệu DB)identity_data/product_data/kafka_data/postgres_data/# OS rác.DS_StoreThumbs.db.idea/ 
