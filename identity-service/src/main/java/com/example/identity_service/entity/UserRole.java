@@ -4,7 +4,9 @@ package com.example.identity_service.entity;
 public enum UserRole {
     BASIC("ROLE_BASIC"),
     VIP("ROLE_VIP"),
-    PREMIUM("ROLE_PREMIUM");
+    PREMIUM("ROLE_PREMIUM"),
+    ADMIN("ROLE_ADMIN"),
+    SHOP_OWNER("ROLE_SHOP_OWNER");
 
     private final String role;
 

@@ -1,62 +1,84 @@
+version: '3.8'
+
 services:
-  # 1. KAFKA (Official Apache Image)
+  # --- HẠ TẦNG KAFKA (KRaft mode - Không cần Zookeeper) ---
   kafka:
     image: apache/kafka:3.7.0
     container_name: kafka
     ports:
-      - "9092:9092"
+      - "9092:9092" # Cổng cho máy ngoài (IDE/DBeaver)
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+      KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092,INTERNAL://kafka:29092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
       KAFKA_KRAFT_CLUSTER_ID: 'abcdefghijklmnopqrstuv'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     networks:
       - micro-network
 
-  kafka-ui:
-    image: provectuslabs/kafka-ui:v0.7.2
-    container_name: kafka-ui
-    ports:
-      - "8989:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-    networks:
-      - micro-network
-
-  # 2. DATABASES
-  identity-db:
+  # --- DATABASES (Mỗi thằng một nhà, có lưu dữ liệu thật) ---
+  order-db:
     image: postgres:15-alpine
-    container_name: identity-db
+    container_name: order-db
     environment:
-      POSTGRES_DB: identity_db
+      POSTGRES_DB: order_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 123
     ports:
-      - "5433:5432"
+      - "5435:5432"
+    volumes:
+      - order_data:/var/lib/postgresql/data
     networks:
       - micro-network
 
-  product-db:
+  repo-db:
     image: postgres:15-alpine
-    container_name: product-db
+    container_name: repo-db
     environment:
-      POSTGRES_DB: product_db
+      POSTGRES_DB: repo_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 123
     ports:
-      - "5434:5432"
+      - "5436:5432"
+    volumes:
+      - repo_data:/var/lib/postgresql/data
     networks:
       - micro-network
 
-  # 3. TRUNG TÂM ĐIỀU PHỐI
+  pay-db:
+    image: postgres:15-alpine
+    container_name: pay-db
+    environment:
+      POSTGRES_DB: pay_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+    ports:
+      - "5437:5432"
+    volumes:
+      - pay_data:/var/lib/postgresql/data
+    networks:
+      - micro-network
+
+  ship-db:
+    image: postgres:15-alpine
+    container_name: ship-db
+    environment:
+      POSTGRES_DB: ship_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+    ports:
+      - "5438:5432"
+    volumes:
+      - ship_data:/var/lib/postgresql/data
+    networks:
+      - micro-network
+
+  # --- TRUNG TÂM ĐIỀU PHỐI (Discovery Server) ---
   discovery-server:
     build: 
       context: ./discovery-server
@@ -66,55 +88,82 @@ services:
     networks:
       - micro-network
 
-  # 4. MICROSERVICES
-  identity-service:
-    build: 
-      context: ./identity-service
-    container_name: identity-service
+  # --- CÁC MICROSERVICES (Saga Flow) ---
+  order-service:
+    build:
+      context: . # SỬA: Đứng ở thư mục tổng
+      dockerfile: order-service/Dockerfile # SỬA: Chỉ đường dẫn tới Dockerfile
+    container_name: order-service
     ports:
-      - "8081:8081"
+      - "8083:8083"
     environment:
-      SPRING_APPLICATION_NAME: identity-service
-      # PHẢI TRỎ VỀ identity-db thay vì localhost
-      SPRING_DATASOURCE_URL: jdbc:postgresql://identity-db:5432/identity_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: 123
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
     depends_on:
-      - identity-db
+      - order-db
       - kafka
       - discovery-server
     networks:
       - micro-network
 
-  product-service:
-    build: 
-      context: ./product-service
-    container_name: product-service
+  repo-service:
+    build:
+      context: . # SỬA
+      dockerfile: repo-service/Dockerfile # SỬA
+    container_name: repo-service
     ports:
-      - "8082:8082"
+      - "8084:8084"
     environment:
-      SPRING_APPLICATION_NAME: product-service
-      SPRING_DATASOURCE_URL: jdbc:postgresql://product-db:5432/product_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: 123
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://repo-db:5432/repo_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
     depends_on:
-      - product-db
+      - repo-db
       - kafka
-      - discovery-server
     networks:
       - micro-network
 
+  pay-service:
+    build:
+      context: . # SỬA
+      dockerfile: pay-service/Dockerfile # SỬA
+    container_name: pay-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://pay-db:5432/pay_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+    depends_on:
+      - pay-db
+      - kafka
+    networks:
+      - micro-network
+
+  ship-service:
+    build:
+      context: . # SỬA
+      dockerfile: ship-service/Dockerfile # SỬA
+    container_name: ship-service
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://ship-db:5432/ship_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
+    depends_on:
+      - ship-db
+      - kafka
+    networks:
+      - micro-network
+
+  # --- API GATEWAY (Cổng vào duy nhất) ---
   api-gateway:
-    build: 
-      context: ./api-gateway
+    build: ./api-gateway
     container_name: api-gateway
     ports:
-      - "8085:8080"
+      - "9000:8080" # Truy cập qua localhost:9000
     environment:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
     depends_on:
@@ -122,17 +171,33 @@ services:
     networks:
       - micro-network
 
-  dozzle:
+  # --- CÔNG CỤ THEO DÕI ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    ports:
+      - "8989:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks:
+      - micro-network
+
+  dozzle: # Xem log cực nhanh trên web
     image: amir20/dozzle:latest
     container_name: dozzle
     ports:
       - "8888:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - micro-network
 
 volumes:
-  identity_data: # Khai báo để Docker tạo ổ đĩa cho identity
-  product_data:  # Khai báo để Docker tạo ổ đĩa cho product
+  order_data:
+  repo_data:
+  pay_data:
+  ship_data:
 
 networks:
   micro-network:

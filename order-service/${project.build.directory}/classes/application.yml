@@ -1,0 +1,57 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    # SAI: order-db:5432 (chỉ container mới hiểu)
+    # ĐÚNG: localhost:5435 (Cổng bạn đã mở ra cho máy Laptop)
+    url: jdbc:postgresql://localhost:5435/order_db
+    username: postgres
+    password: 123
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  kafka:
+    # SAI: kafka:29092 (Cổng nội bộ của Docker)
+    # ĐÚNG: localhost:9092 (Cổng EXTERNAL bạn đã mở cho IDE)
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: order-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.example.event_library"
+
+eureka:
+  client:
+    service-url:
+      # SAI: discovery-server:8761
+      # ĐÚNG: localhost:8761
+      defaultZone: http://localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    # Quan trọng để các service local gọi được nhau qua IP thật của Laptop
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: INFO
+    # Kiểm tra lại đúng package name thực tế của bạn
+    com.example.order_service: DEBUG

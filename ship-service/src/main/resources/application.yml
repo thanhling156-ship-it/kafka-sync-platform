@@ -1,0 +1,40 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: ship-service
+
+  datasource:
+    # Port 5438 đúng theo bảng docker ps của bạn
+    url: jdbc:postgresql://localhost:5438/ship_db
+    username: postgres
+    password: 123
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: ship-group
+      auto-offset-reset: earliest
+      properties:
+        spring.json.trusted.packages: "com.example.event_library"
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.example.ship_service: DEBUG

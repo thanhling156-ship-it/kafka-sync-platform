@@ -8,17 +8,25 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class IdentityProducer {
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
+    //dùng khi cần bắn lên kafka, thường ở cuối hàm
+    //UserRegistrationEvent ở project common
     public void publishUserRegistration(User user) {
         UserRegistrationEvent event = UserRegistrationEvent.builder()
-                .userId(user.getId().toString())
+                .userId(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
+                .fullName(user.getFirstName() + " " + user.getLastName()) // Ghép tên
+                .phoneNumber(user.getPhone())
+                .address(user.getAddress())
+                .createdAt(Instant.now())
                 .build();
 
         log.info("Sending event to Kafka: {}", event);

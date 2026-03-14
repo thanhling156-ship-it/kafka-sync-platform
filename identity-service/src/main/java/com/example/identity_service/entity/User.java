@@ -3,6 +3,8 @@ package com.example.identity_service.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "users")
 @Data
@@ -14,9 +16,12 @@ public class User {
     private String username;
     private String password; // Phải được mã hóa BCrypt nhé!
     private String email;
+    private boolean isEnabled; // Trạng thái hoạt động
 
     @Enumerated(EnumType.STRING) // Lưu dưới dạng chuỗi (BASIC, VIP...) vào DB cho dễ đọc
     private UserRole role;
+
+    private LocalDateTime updatedAt;
 
     @Version
     private Long version;
@@ -34,6 +39,14 @@ public class User {
     public User(String username, UserRole role) {
         this.username = username;
         this.role = role;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public Long getId() {
@@ -82,5 +95,13 @@ public class User {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public boolean isEnabled() {
+        return isEnabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        isEnabled = enabled;
     }
 }

@@ -1,5 +1,6 @@
 package com.example.identity_service.config;
 
+
 import com.example.common.CommonAuthFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
