@@ -37,7 +37,7 @@ public class ShippingConsumer {
     @KafkaListener(topics = "pay-fail-topic", groupId = "ship-group")
     public void onPayFail(PayStatusEvent event) {
         updateAndCheck(event.getOrderId(), sn -> {
-            sn.setPayStatus("FAIL");
+            sn.setPayStatus("FAILED");
             sn.setUserId(event.getUserId());
             sn.setAmount(event.getTotalPrice());
         });
