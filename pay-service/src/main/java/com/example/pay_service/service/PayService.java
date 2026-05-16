@@ -12,6 +12,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 
 @Service
@@ -25,121 +26,104 @@ public class PayService {
 
     @Transactional
     public void handleOrderCreated(OrderCreatedEvent event) {
+        /*
+        public class OrderCreatedEvent {
+            private String orderId;
+            private String userId;
+            private String productId; // ID hoặc mã sản phẩm để trừ kho
+            private Integer quantity;  // Số lượng khách đặt
+            private Double totalPrice;
+            private String address;    // Thông tin này Repo có thể không dùng nhưng vẫn có trong Fat Event
+            private String phone;
+        }
+         */
         try {
             // 1. Tìm người dùng dựa trên UserId từ Event
             User user = userRepository.findByUserId(event.getUserId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng: " + event.getUserId()));
-
-            // 2. Kiểm tra số dư (Sử dụng hàm hasEnoughBalance có sẵn của bạn)
-            if (user.hasEnoughBalance(event.getTotalPrice())) {
-
-                // --- NHÁNH THÀNH CÔNG: CHỈ RESERVE (PHONG TỎA TIỀN) ---
-
-                // Tạo bản ghi giữ tiền
-                PaymentReserve reserve = PaymentReserve.builder()
-                        .orderId(event.getOrderId())
-                        .userId(event.getUserId())
-                        .amount(event.getTotalPrice())
-                        .status("PENDING") // Chờ Ship Service phản hồi
-                        .build();
-
-                paymentReserveRepository.save(reserve);
-
-                log.info("✅ Đã tạo bản ghi RESERVE (Phong tỏa tiền) cho đơn hàng: {}", event.getOrderId());
-
+            Double totalPendingForUser = paymentReserveRepository.sumAmountByUserIdAndStatus(event.getUserId(), "PENDING");
+            // 2. Kiểm tra số dư (Sử dụng hàm hasEnoughBalance có sẵn)
+            PaymentReserve reserve = PaymentReserve.builder()
+                    .orderId(event.getOrderId())
+                    .userId(event.getUserId())
+                    .amount(event.getTotalPrice())
+                    .build();
+            if (user.hasEnoughBalance(event.getTotalPrice()+totalPendingForUser)) {
+                // --- NHÁNH THÀNH CÔNG: CHỈ RESERVE TIỀN---
+                reserve.setStatus("PENDING");
+                log.info("✅ Đã tạo bản ghi RESERVE cho đơn hàng: {}", event.getOrderId());
                 // Bắn tin vào topic Success để Ship Service tổng hợp
-                sendStatus("pay-success-topic", event.getOrderId(), "SUCCESS", "Payment reserved in table");
-
+                sendStatus("pay-success-topic", reserve, "Enough Money");
             } else {
-
-                // --- NHÁNH THẤT BẠI: KHÔNG ĐỦ TIỀN ---
-                log.warn("❌ KHÔNG ĐỦ SỐ DƯ (Reserve fail) cho đơn: {}", event.getOrderId());
-
-                // Bắn tin vào topic Fail - Ship sẽ biết và phát lệnh Fail-Fast
-                sendStatus("pay-fail-topic", event.getOrderId(), "FAILED", "Insufficient balance");
+                // --- NHÁNH THẤT BẠI: HẾT TIỀN---
+                reserve.setStatus("FAILED");
+                log.warn("❌ HẾT TIỀN (Reserve fail) cho đơn: {}", event.getOrderId());
+                // Bắn tin vào topic Fail để Ship Service tổng hợp
+                sendStatus("pay-fail-topic", reserve, "Out of Money");
             }
-
+            // Tạo bản ghi giữ chỗ
+            paymentReserveRepository.save(reserve);
         } catch (Exception e) {
             log.error("💥 Lỗi xử lý Reserve tiền cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("pay-fail-topic", event.getOrderId(), "FAILED", "System error: " + e.getMessage());
+            sendStatus("pay-fail-topic", null, "System error: " + e.getMessage());
         }
+    }
+
+    private void sendStatus(String topic, PaymentReserve reserve, String message) {
+        /*
+        public class PayStatusEvent {
+            private String orderId;
+            private String userId;
+            private String status; // SUCCESS hoặc FAILED
+            private String message; // <--- THÊM DÒNG NÀY ĐỂ CHỨA LÝ DO
+            private Double totalPrice;
+        }
+         */
+        PayStatusEvent statusEvent = PayStatusEvent.builder()
+                .orderId(reserve.getOrderId())
+                .userId(reserve.getUserId())
+                .status(reserve.getStatus())
+                .message(message)
+                .totalPrice(reserve.getAmount())
+                .build();
+        kafkaTemplate.send(topic, reserve.getOrderId() ,statusEvent);
     }
 
     @Transactional
     public void finalizeOrder(String orderId, String status) {
-        // 1. Kiểm tra sự tồn tại (Existence-based)
-        // Nếu không tìm thấy bản ghi phong tỏa, nghĩa là mình đã Self-fail hoặc đã xử lý rồi.
-        Optional<PaymentReserve> reserveOpt = paymentReserveRepository.findByOrderId(orderId);
 
+        // 1. Kiểm tra sự tồn tại của bản ghi phong tỏa
+        Optional<PaymentReserve> reserveOpt = paymentReserveRepository.findByOrderId(orderId);
         if (reserveOpt.isEmpty()) {
-            log.info("ℹ️ [IDEMPOTENT] Không tìm thấy bản ghi phong tỏa cho đơn: {}. Bỏ qua.", orderId);
+            log.info("ℹ️ [IDEMPOTENT] Không tìm thấy bản ghi cho đơn: {}. Bỏ qua.", orderId);
             return;
         }
 
         PaymentReserve reserve = reserveOpt.get();
+        String stateReserve = reserve.getStatus();
 
-        // 2. Xử lý dựa trên phán quyết của Ship
-        if ("SUCCESS".equalsIgnoreCase(status)) {
-            // TRƯỜNG HỢP THÀNH CÔNG: Trừ tiền thật từ tài khoản User
-            log.info("💰 [COMMIT] Đơn hàng thành công. Đang trừ tiền thật cho User: {} - Số tiền: {}",
-                    reserve.getUserId(), reserve.getAmount());
+        // 2. KIỂM TRA PENDING TRƯỚC (Nếu không phải PENDING thì dừng luôn)
+        if (!stateReserve.equalsIgnoreCase("PENDING")) {
+            log.info("ℹ️ [IDEMPOTENT] Đơn hàng {} đã được xử lý hoặc hủy bỏ từ trước (Trạng thái hiện tại: {}). Bỏ qua.", orderId, stateReserve);
+            return;
+        }
 
-            User user = userRepository.findByUserId(reserve.getUserId())
-                    .orElseThrow(() -> new RuntimeException("❌ Lỗi nghiêm trọng: User không tồn tại để trừ tiền!"));
+        // 3. Chỉ lấy thông tin User khi trạng thái hợp lệ (Tiết kiệm được 1 lần truy vấn DB nếu đơn đã xử lý)
+        User user = userRepository.findByUserId(reserve.getUserId())
+                .orElseThrow(() -> new RuntimeException("❌ Lỗi nghiêm trọng: Không tìm thấy User ID: " + reserve.getUserId()));
 
+        // 4. Xử lý nghiệp vụ khi trạng thái chắc chắn là PENDING
+        if (status.equalsIgnoreCase("success")) {
+            // TRƯỜNG HỢP THÀNH CÔNG: Trừ tiền thật và chuyển sang COMPLETED
             user.setBalance(user.getBalance() - reserve.getAmount());
-            userRepository.save(user);
-
+            reserve.setStatus("COMPLETED");
+            log.info("💰 [COMMIT] Đơn hàng {} thành công. Đã trừ tiền thật.", orderId);
         } else {
-            // TRƯỜNG HỢP THẤT BẠI: Chỉ cần giải tỏa (vì tiền vẫn nằm trong túi User, mình mới chỉ phong tỏa trên giấy tờ)
-            log.warn("🔄 [ROLLBACK] Đơn hàng thất bại. Giải tỏa số tiền phong tỏa: {}", reserve.getAmount());
+            // TRƯỜNG HỢP THẤT BẠI: Chỉ chuyển sang CANCELLED để giải tỏa
+            reserve.setStatus("CANCELLED");
+            log.warn("🔄 [ROLLBACK] Đơn hàng {} thất bại. Đã cập nhật trạng thái bản ghi THANH TOÁN ---> CANCELLED", orderId);
         }
-
-        // 3. Xóa bản ghi phong tỏa (Dọn dẹp State)
-        paymentReserveRepository.delete(reserve);
-
-        log.info("✅ Đã hoàn tất xử lý thanh toán cho đơn: {}. Trạng thái: {}", orderId, status);
-    }
-
-    @Transactional
-    public void processPayment(OrderCreatedEvent event) {
-        try {
-            User user = userRepository.findByUserId(event.getUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            if (user.hasEnoughBalance(event.getTotalPrice())) {
-                // --- THÀNH CÔNG ---
-                user.deduct(event.getTotalPrice());
-                userRepository.save(user);
-
-                log.info("💰 Đã trừ tiền đơn: {}. Số dư còn lại: {}", event.getOrderId(), user.getBalance());
-                sendStatus("pay-success-topic", event.getOrderId(), "SUCCESS", "Payment successful");
-            } else {
-                // --- THẤT BẠI (HẾT TIỀN) ---
-                log.warn("❌ Không đủ tiền cho đơn: {}", event.getOrderId());
-                sendStatus("pay-fail-topic", event.getOrderId(), "FAILED", "Insufficient balance");
-            }
-        } catch (Exception e) {
-            log.error("💥 Lỗi thanh toán đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("pay-fail-topic", event.getOrderId(), "FAILED", e.getMessage());
-        }
-    }
-
-    @Transactional
-    public void refundPayment(String orderId, Double amount, String userId) {
-        log.info("🔄 Hoàn tiền cho đơn: {} - User: {}", orderId, userId);
-        userRepository.findByUserId(userId).ifPresent(user -> {
-            user.refund(amount);
-            userRepository.save(user);
-        });
-    }
-
-    private void sendStatus(String topic, String orderId, String status, String message) {
-        PayStatusEvent statusEvent = PayStatusEvent.builder()
-                .orderId(orderId)
-                .status(status)
-                .message(message)
-                .build();
-        kafkaTemplate.send(topic, statusEvent);
+        userRepository.save(user);
+        paymentReserveRepository.save(reserve);
     }
 }

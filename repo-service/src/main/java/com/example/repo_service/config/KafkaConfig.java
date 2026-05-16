@@ -31,7 +31,7 @@ public class KafkaConfig {
         Map<String, Object> configProps = kafkaProperties.buildProducerProperties();
 
         // Thiết lập Serializer theo chuẩn 2026 để không bị gạch ngang
-        // Đây là nơi bạn định nghĩa "Luật chơi" cho việc gửi tin
+        // Đây là nơi định nghĩa "Luật chơi" cho việc gửi tin
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JacksonJsonSerializer.class);
 

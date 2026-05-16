@@ -24,7 +24,7 @@ public class ShippingService {
                 .orElseThrow(() -> new RuntimeException("Snapshot not found for order: " + orderId));
 
         // 2. Kiểm tra xem đã nhận đủ event từ Pay và Repo chưa
-        // Giả định hàm isFinished() của bạn check: payStatus != null && repoStatus != null
+        // Giả định hàm isFinished() check: payStatus != null && repoStatus != null
         if (!sn.isFinished()) {
             log.info("⏳ Đơn hàng {}: Đang chờ đủ dữ liệu (Pay: {}, Repo: {})",
                     orderId, sn.getPayStatus(), sn.getRepoStatus());
@@ -52,13 +52,8 @@ public class ShippingService {
             sendStatus("ship-fail", orderId, finalStatus, finalMessage);
         }
 
-        // 5. Cập nhật trạng thái snapshot để tránh xử lý lại (Idempotent)
-        // sn.setProcessed(true);
-        // repository.save(sn);
     }
 
-
-    //hàm helper
     private void sendStatus(String topic, String orderId, String status, String message) {
         // Lưu ý: Đổi RepoStatusEvent thành ShipCreatedEvent cho đúng kiểu dữ liệu
         ShipCreatedEvent event = ShipCreatedEvent.builder()
@@ -76,17 +71,17 @@ public class ShippingService {
                 // THÀNH CÔNG
                 log.info("🚀 Gửi tin nhắn THÀNH CÔNG tới topic [{}]. Offset: {}",
                         topic, result.getRecordMetadata().offset());
+                // Phải thành công thì mới in
+                log.info("🚀 Đã phát event ship-created tới topic {}: Status={}", topic, status);
             } else {
                 // THẤT BẠI
                 log.error("💥 Gửi tin nhắn THẤT BẠI tới topic [{}]. Lý do: {}",
                         topic, ex.getMessage());
             }
         });
-
-        kafkaTemplate.send(topic, event);
-        log.info("🚀 Đã phát event ship-created tới topic {}: Status={}", topic, status);
     }
 
+    // hàm helper
     private void handleCompensations(ShippingSnapshot sn) {
         // 1. Nếu Pay thành công mà Repo lại xịt -> Bảo Pay hoàn tiền
         if (sn.getPayStatus().equals("SUCCESS")) {

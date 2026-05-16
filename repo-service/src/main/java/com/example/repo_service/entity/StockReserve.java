@@ -26,5 +26,5 @@ public class StockReserve {
     private Integer quantity;
 
     @Column(name = "status")
-    private String status; // PENDING, COMPLETED, CANCELLED
+    private String status; // PENDING ---> COMPLETED/CANCELLED OR FAILED
 }

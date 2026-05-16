@@ -8,6 +8,7 @@ import com.example.repo_service.repository.ProductRepository;
 import com.example.repo_service.repository.StockReserveRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.User;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,127 +22,108 @@ public class RepoService {
 
     private final ProductRepository productRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
-    private final StockReserveRepository reserveRepository;
+    private final StockReserveRepository stockReserveRepository;
 
 
     @Transactional
     public void handleOrderCreated(OrderCreatedEvent event) {
+        /*
+        public class OrderCreatedEvent {
+            private String orderId;
+            private String userId;
+            private String productId; // ID hoặc mã sản phẩm để trừ kho
+            private Integer quantity;  // Số lượng khách đặt
+            private Double totalPrice; // Check để xem có lệch giá hiện tại với repo không <=> quantity * price ?= totalPrice
+            private String address;    // Thông tin này Repo có thể không dùng nhưng vẫn có trong Fat Event
+            private String phone;
+        }
+         */
         try {
             // 1. Tìm sản phẩm dựa trên ProductCode từ Event
             Product product = productRepository.findByProductCode(event.getProductId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm: " + event.getProductId()));
-
-            // 2. Kiểm tra tồn kho (Sử dụng hàm hasEnoughStock có sẵn của bạn)
-            if (product.hasEnoughStock(event.getQuantity())) {
-
-                // --- NHÁNH THÀNH CÔNG: CHỈ RESERVE ---
-
-                // Tạo bản ghi giữ chỗ
-                StockReserve reserve = StockReserve.builder()
-                        .orderId(event.getOrderId())
-                        .productCode(event.getProductId())
-                        .quantity(event.getQuantity())
-                        .status("PENDING") // Chờ Ship Service phản hồi
-                        .build();
-
-                reserveRepository.save(reserve);
-
+            long totalQuantityForOrder = stockReserveRepository.sumQuantityByProductCodeAndStatus(event.getProductId(),"PENDING");
+            // 2. Kiểm tra tồn kho (Sử dụng hàm hasEnoughStock có sẵn)
+            StockReserve reserve = StockReserve.builder()
+                    .orderId(event.getOrderId())
+                    .productCode(event.getProductId())
+                    .quantity(event.getQuantity())
+                    .build();
+            if (product.hasEnoughStock(event.getQuantity()+totalQuantityForOrder)) {
+                // --- NHÁNH THÀNH CÔNG: CHỈ RESERVE HÀNG---
+                reserve.setStatus("PENDING");
                 log.info("✅ Đã tạo bản ghi RESERVE cho đơn hàng: {}", event.getOrderId());
-
                 // Bắn tin vào topic Success để Ship Service tổng hợp
-                sendStatus("repo-success-topic", event.getOrderId(), "SUCCESS", "Stock reserved in table");
-
+                sendStatus("repo-success-topic", reserve, "In Stock");
             } else {
-
                 // --- NHÁNH THẤT BẠI: HẾT HÀNG ---
+                reserve.setStatus("FAILED");
                 log.warn("❌ HẾT HÀNG (Reserve fail) cho đơn: {}", event.getOrderId());
-
-                // Bắn tin vào topic Fail - Ship sẽ biết và phát lệnh Fail-Fast
-                sendStatus("repo-fail-topic", event.getOrderId(), "FAILED", "Out of stock");
+                // Bắn tin vào topic Fail để Ship Service tổng hợp
+                sendStatus("repo-fail-topic", reserve, "Out of Stock");
             }
-
+            // Tạo bản ghi giữ chỗ
+            stockReserveRepository.save(reserve);
         } catch (Exception e) {
-            log.error("💥 Lỗi xử lý Reserve cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("repo-fail-topic", event.getOrderId(), "FAILED", "System error: " + e.getMessage());
+            log.error("💥 Lỗi xử lý Reserve hàng cho đơn {}: {}", event.getOrderId(), e.getMessage());
+            sendStatus("repo-fail-topic", null, "System error: " + e.getMessage());
         }
+    }
+
+    private void sendStatus(String topic, StockReserve reserve, String message) {
+        /*
+        public class RepoStatusEvent {
+            private String orderId;
+            private String status; // SUCCESS hoặc FAILED
+            private String message; // <--- THÊM DÒNG NÀY ĐỂ CHỨA LÝ DO
+            private String productId;
+            private Integer quantity;
+        }
+         */
+        RepoStatusEvent event = RepoStatusEvent.builder()
+                .orderId(reserve.getOrderId())
+                .status(reserve.getStatus())
+                .message(message)
+                .productId(reserve.getProductCode())
+                .quantity(reserve.getQuantity())
+                .build();
+        kafkaTemplate.send(topic, reserve.getOrderId() ,event);
     }
 
     @Transactional
     public void finalizeOrder(String orderId, String status) {
-        // 1. Dùng Existence-based logic: Không thấy record thì EXIT ngay
-        Optional<StockReserve> reserveOpt = reserveRepository.findByOrderId(orderId);
-
+        // 1. Kiểm tra sự tồn tại của bản ghi phong tỏa
+        Optional<StockReserve> reserveOpt = stockReserveRepository.findByOrderId(orderId);
         if (reserveOpt.isEmpty()) {
-            log.info("ℹ️ [EXIT] Không tìm thấy bản ghi giữ chỗ cho đơn {}. Bỏ qua vì đã xử lý hoặc Self-fail.", orderId);
+            log.info("ℹ️ [IDEMPOTENT] Không tìm thấy bản ghi cho đơn: {}. Bỏ qua.", orderId);
             return;
         }
 
         StockReserve reserve = reserveOpt.get();
+        String stateReserve = reserve.getStatus();
 
-        // 2. Chỉ thực hiện TRỪ KHO THẬT khi Ship báo SUCCESS
-        if ("SUCCESS".equalsIgnoreCase(status)) {
-            Product product = productRepository.findByProductCode(reserve.getProductCode())
-                    .orElseThrow(() -> new RuntimeException("Sản phẩm biến mất khỏi DB: " + reserve.getProductCode()));
+        // 2. KIỂM TRA PENDING TRƯỚC (Nếu không phải PENDING thì dừng luôn)
+        if (!stateReserve.equalsIgnoreCase("PENDING")) {
+            log.info("ℹ️ [IDEMPOTENT] Đơn hàng {} đã được xử lý hoặc hủy bỏ từ trước (Trạng thái hiện tại: {}). Bỏ qua.", orderId, stateReserve);
+            return;
+        }
 
-            log.info("🚚 [COMMIT] Trừ kho thật cho đơn {}: {} x{}", orderId, reserve.getProductCode(), reserve.getQuantity());
+        // 3. Chỉ lấy thông tin User khi trạng thái hợp lệ (Tiết kiệm được 1 lần truy vấn DB nếu đơn đã xử lý)
+        Product product = productRepository.findByProductCode(reserve.getProductCode())
+                .orElseThrow(() -> new RuntimeException("❌ Lỗi nghiêm trọng: Không tìm thấy Product ID: " + reserve.getProductCode()));
 
-            product.reduceStock(reserve.getQuantity());
-            productRepository.save(product); // Lưu lại thay đổi số lượng kho
+        // 4. Xử lý nghiệp vụ khi trạng thái chắc chắn là PENDING
+        if (status.equalsIgnoreCase("success")) {
+            // TRƯỜNG HỢP THÀNH CÔNG: Trừ hàng thật và chuyển sang COMPLETED
+            product.setStockQuantity(product.getStockQuantity() - reserve.getQuantity());
+            reserve.setStatus("COMPLETED");
+            log.info("🍔 [COMMIT] Đơn hàng {} thành công. Đã trừ hàng thật.", orderId);
         } else {
-            // Trường hợp FAILED (Other-fail)
-            log.warn("🔄 [ROLLBACK] Đơn hàng thất bại, chỉ xóa bản ghi giữ chỗ cho đơn: {}", orderId);
+            // TRƯỜNG HỢP THẤT BẠI: Chỉ chuyển sang CANCELLED để giải tỏa
+            reserve.setStatus("CANCELLED");
+            log.warn("🔄 [ROLLBACK] Đơn hàng {} thất bại. Đã cập nhật trạng thái bản ghi SẢN PHẨM ---> CANCELLED", orderId);
         }
-
-        // 3. Cuối cùng, LUÔN LUÔN xóa bản ghi reserve (Dọn dẹp State)
-        reserveRepository.delete(reserve);
-
-        log.info("✅ Hoàn tất xử lý Repo cho đơn {}. Trạng thái cuối: {}", orderId, status);
-    }
-
-    @Transactional
-    public void reduceStock(OrderCreatedEvent event) {
-        try {
-            // 1. Tìm và Khóa sản phẩm (Pessimistic Lock đã cấu hình ở Repo)
-            Product product = productRepository.findByProductCode(event.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found: " + event.getProductId()));
-
-            // 2. IF-ELSE: Kiểm tra tồn kho ngay tại đây
-            if (product.getStockQuantity() >= event.getQuantity()) {
-
-                // --- NHÁNH THÀNH CÔNG ---
-                product.setStockQuantity(product.getStockQuantity() - event.getQuantity());
-                productRepository.save(product);
-
-                log.info("✅ Giữ hàng THÀNH CÔNG cho đơn: {}", event.getOrderId());
-
-                // Bắn tin vào topic Success - Ship chỉ việc nhặt và xác nhận
-                sendStatus("repo-success-topic", event.getOrderId(), "SUCCESS", "Stock reserved");
-
-            } else {
-
-                // --- NHÁNH THẤT BẠI (HẾT HÀNG) ---
-                log.warn("❌ HẾT HÀNG cho đơn: {}", event.getOrderId());
-
-                // Bắn tin vào topic Fail - Ship nhặt được là biết phải hủy đơn/rollback ngay
-                sendStatus("repo-fail-topic", event.getOrderId(), "FAILED", "Out of stock");
-            }
-
-        } catch (Exception e) {
-            // --- NHÁNH LỖI HỆ THỐNG ---
-            log.error("💥 Lỗi hệ thống Repo cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("repo-fail-topic", event.getOrderId(), "FAILED", e.getMessage());
-        }
-    }
-
-
-
-
-    private void sendStatus(String topic, String orderId, String status, String message) {
-        RepoStatusEvent event = RepoStatusEvent.builder()
-                .orderId(orderId)
-                .status(status)
-                .message(message)
-                .build();
-        kafkaTemplate.send(topic, event);
+        productRepository.save(product);
+        stockReserveRepository.save(reserve);
     }
 }

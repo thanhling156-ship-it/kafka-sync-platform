@@ -7,6 +7,7 @@ import lombok.*;
 @Table(name = "shipping_snapshots")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
+// Phải đồng nhất với OrderCreatedEvent
 public class ShippingSnapshot {
     @Id
     private String orderId;

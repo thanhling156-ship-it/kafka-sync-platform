@@ -41,7 +41,6 @@ public class RepoConsumer {
     public void handleShipSuccess(ShipCreatedEvent event) {
         log.warn("🔄 [REPO-ROLLBACK] Nhận lệnh hoàn hàng cho đơn: {}. Lý do từ trọng tài: {}",
                 event.getOrderId(),event.getCreatedAt());
-
         // Gọi service xử lý DB (Cộng lại stock)
         repoService.finalizeOrder(event.getOrderId(),"SUCCESS");
     }

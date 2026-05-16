@@ -25,7 +25,7 @@ public class PaymentReserve {
     @Column(name = "amount", nullable = false)
     private Double amount;
 
-    private String status; // PENDING, COMPLETED, CANCELLED
+    private String status; // PENDING ---> COMPLETED/CANCELLED OR FAILED
 
     
 }

@@ -31,7 +31,7 @@ public class Product {
     private Double price;
 
     // Helper method để kiểm tra và trừ kho
-    public boolean hasEnoughStock(int requestedQuantity) {
+    public boolean hasEnoughStock(long requestedQuantity) {
         return this.stockQuantity >= requestedQuantity;
     }
 
