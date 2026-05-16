@@ -80,19 +80,4 @@ public class ShippingService {
             }
         });
     }
-
-    // hàm helper
-    private void handleCompensations(ShippingSnapshot sn) {
-        // 1. Nếu Pay thành công mà Repo lại xịt -> Bảo Pay hoàn tiền
-        if (sn.getPayStatus().equals("SUCCESS")) {
-            log.warn("🔄 [ROLLBACK] Bắn lệnh hoàn TIỀN đơn: {}", sn.getOrderId());
-            kafkaTemplate.send("pay-rollback", new PayRollbackEvent(sn.getOrderId(), sn.getUserId(), sn.getAmount(),"REPOSITORY_FAILED"));
-        }
-
-        // 2. Nếu Repo thành công mà Pay lại xịt -> Bảo Repo hoàn hàng
-        if (sn.getRepoStatus().equals("SUCCESS")) {
-            log.warn("🔄 [ROLLBACK] Bắn lệnh hoàn HÀNG đơn: {}", sn.getOrderId());
-            kafkaTemplate.send("repo-rollback", new RepoRollbackEvent(sn.getOrderId(), "PAYMENT_FAILED"));
-        }
-    }
 }
