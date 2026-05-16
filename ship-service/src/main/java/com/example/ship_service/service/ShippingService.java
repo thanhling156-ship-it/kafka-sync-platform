@@ -64,7 +64,7 @@ public class ShippingService {
                 .build();
 
         // kafkaTemplate.send trả về một CompletableFuture
-        var future = kafkaTemplate.send(topic, event);
+        var future = kafkaTemplate.send(topic, orderId, event);
 
         future.whenComplete((result, ex) -> {
             if (ex == null) {
