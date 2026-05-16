@@ -67,7 +67,11 @@ public class ShippingConsumer {
         // Nếu chưa có trong DB, tạo mới một Entity CHỈ CÓ orderId
         // Các trường payStatus, repoStatus tự động là "PENDING" theo định nghĩa của Entity
         ShippingSnapshot sn = repository.findById(orderId)
-                .orElseGet(() -> ShippingSnapshot.builder().orderId(orderId).build());
+            .orElseGet(() -> {
+                ShippingSnapshot newSn = new ShippingSnapshot();
+                newSn.setOrderId(orderId);
+                return newSn;
+            });
         // Chạy updater để đắp thêm dữ liệu từ Event vào
         updater.accept(sn);
         // Lưu vào DB (JPA tự biết là INSERT nếu mới, UPDATE nếu đã có)
