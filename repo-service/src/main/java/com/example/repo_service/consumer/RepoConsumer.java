@@ -39,7 +39,7 @@ public class RepoConsumer {
 
     @KafkaListener(topics = "ship-success", groupId = "repo-group")
     public void handleShipSuccess(ShipCreatedEvent event) {
-        log.warn("🔄 [REPO-ROLLBACK] Nhận lệnh hoàn hàng cho đơn: {}. Lý do từ trọng tài: {}",
+        log.warn("✅ [REPO-COMMIT] Nhận lệnh chốt kho thật cho đơn: {}.",
                 event.getOrderId(),event.getCreatedAt());
         // Gọi service xử lý DB (Cộng lại stock)
         repoService.finalizeOrder(event.getOrderId(),"SUCCESS");
