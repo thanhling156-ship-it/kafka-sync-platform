@@ -29,7 +29,7 @@ public class PayConsumer {
 
     @KafkaListener(topics = "ship-success", groupId = "pay-group")
     public void handleShipSuccess(ShipCreatedEvent event) {
-        log.warn("🔄 [PAY-ROLLBACK] Nhận lệnh hoàn tiền cho đơn: {}", event.getOrderId());
+        log.warn("✅ [PAY-COMMIT] Nhận lệnh chốt tiền cho đơn: {}", event.getOrderId());
         // Lưu ý: Event rollback nên mang theo userId và amount để refund chính xác
         payService.finalizeOrder(event.getOrderId(),"SUCCESS");
     }
