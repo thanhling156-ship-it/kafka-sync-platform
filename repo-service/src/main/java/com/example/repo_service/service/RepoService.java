@@ -1,8 +1,9 @@
 package com.example.repo_service.service;
 
-import com.example.event_library.RepoStatusEvent;
+import com.example.event_library.topics.EventTopics;
+import com.example.event_library.events.OrderCreatedEvent;
+import com.example.event_library.events.RepoStatusEvent;
 import com.example.repo_service.entity.Product;
-import com.example.event_library.OrderCreatedEvent;
 import com.example.repo_service.entity.StockReserve;
 import com.example.repo_service.repository.ProductRepository;
 import com.example.repo_service.repository.StockReserveRepository;
@@ -54,19 +55,19 @@ public class RepoService {
                 reserve.setStatus("PENDING");
                 log.info("✅ Đã tạo bản ghi RESERVE cho đơn hàng: {}", event.getOrderId());
                 // Bắn tin vào topic Success để Ship Service tổng hợp
-                sendStatus("repo-success-topic", reserve, "In Stock");
+                sendStatus(EventTopics.REPO_SUCCESS, reserve, "In Stock");
             } else {
                 // --- NHÁNH THẤT BẠI: HẾT HÀNG ---
                 reserve.setStatus("FAILED");
                 log.warn("❌ HẾT HÀNG (Reserve fail) cho đơn: {}", event.getOrderId());
                 // Bắn tin vào topic Fail để Ship Service tổng hợp
-                sendStatus("repo-fail-topic", reserve, "Out of Stock");
+                sendStatus(EventTopics.REPO_FAIL, reserve, "Out of Stock");
             }
             // Tạo bản ghi giữ chỗ
             stockReserveRepository.save(reserve);
         } catch (Exception e) {
             log.error("💥 Lỗi xử lý Reserve hàng cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("repo-fail-topic", null, "System error: " + e.getMessage());
+            sendStatus(EventTopics.REPO_FAIL, null, "System error: " + e.getMessage());
         }
     }
 

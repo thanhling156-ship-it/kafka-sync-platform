@@ -1,52 +1,52 @@
 package com.example.ship_service.consumer;
 
-import com.example.event_library.*;
-import com.example.ship_service.entity.ShippingSnapshot;
+import com.example.event_library.events.*;
+import com.example.ship_service.manager.ShippingManager;
 import com.example.ship_service.repository.ShippingRepository;
 import com.example.ship_service.service.ShippingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.function.Consumer; // IMPORT QUAN TRỌNG Ở ĐÂY
-
 @Component
 @Slf4j
 @RequiredArgsConstructor
 public class ShippingConsumer {
 
-    private final ShippingRepository repository;
-    private final ShippingService shippingService;
+    private final ShippingManager shippingManager;
 
     /*
     Đối với StatusEvent thì status = PENDING/
      */
 
     // 1. Nghe báo cáo từ Pay Service
-    @KafkaListener(topics = "pay-success-topic", groupId = "ship-group")
+    @KafkaListener(topics = "pay-success", groupId = "ship-group")
     public void onPaySuccess(PayStatusEvent event) {
-        updateAndCheck(event.getOrderId(), sn -> {
+        shippingManager.updateAndCheck(event.getOrderId(), sn -> {
             sn.setPayStatus("SUCCESS");
             sn.setUserId(event.getUserId());
             sn.setAmount(event.getTotalPrice());
         });
     }
 
-    @KafkaListener(topics = "pay-fail-topic", groupId = "ship-group")
+    @KafkaListener(topics = "pay-fail", groupId = "ship-group")
     public void onPayFail(PayStatusEvent event) {
-        updateAndCheck(event.getOrderId(), sn -> {
+        shippingManager.updateAndCheck(event.getOrderId(), sn -> {
             sn.setPayStatus("FAILED");
             sn.setUserId(event.getUserId());
             sn.setAmount(event.getTotalPrice());
+            sn.setFlagFail(true);
         });
     }
 
     // 2. Nghe báo cáo từ Repo Service
-    @KafkaListener(topics = "repo-success-topic", groupId = "ship-group")
+    @KafkaListener(topics = "repo-success", groupId = "ship-group")
     public void onRepoSuccess(RepoStatusEvent event) {
-        updateAndCheck(event.getOrderId(), sn -> {
+        shippingManager.updateAndCheck(event.getOrderId(), sn -> {
             sn.setRepoStatus("SUCCESS");
             sn.setProductId(event.getProductId());
             sn.setQuantity(event.getQuantity());
@@ -54,28 +54,14 @@ public class ShippingConsumer {
         });
     }
 
-    @KafkaListener(topics = "repo-fail-topic", groupId = "ship-group")
+    @KafkaListener(topics = "repo-fail", groupId = "ship-group")
     public void onRepoFail(RepoStatusEvent event) {
-        updateAndCheck(event.getOrderId(), sn -> {
+        // Gọi xuyên Class giúp kích hoạt @Transactional thành công
+        shippingManager.updateAndCheck(event.getOrderId(), sn -> {
             sn.setRepoStatus("FAILED");
             sn.setProductId(event.getProductId());
             sn.setQuantity(event.getQuantity());
+            sn.setFlagFail(true);
         });
-    }
-
-    private void updateAndCheck(String orderId, Consumer<ShippingSnapshot> updater) {
-        // Nếu chưa có trong DB, tạo mới một Entity CHỈ CÓ orderId
-        // Các trường payStatus, repoStatus tự động là "PENDING" theo định nghĩa của Entity
-        ShippingSnapshot sn = repository.findById(orderId)
-            .orElseGet(() -> {
-                ShippingSnapshot newSn = new ShippingSnapshot();
-                newSn.setOrderId(orderId);
-                return newSn;
-            });
-        // Chạy updater để đắp thêm dữ liệu từ Event vào
-        updater.accept(sn);
-        // Lưu vào DB (JPA tự biết là INSERT nếu mới, UPDATE nếu đã có)
-        repository.save(sn);
-        shippingService.checkAndFinalize(orderId);
     }
 }

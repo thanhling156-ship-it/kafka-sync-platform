@@ -1,11 +1,14 @@
 package com.example.order_service.service;
 
+import com.example.order_service.constant.StatusCode;
 import com.example.order_service.dto.OrderRequest;
 import com.example.order_service.entity.Order;
+import com.example.order_service.handler.NotificationHandler;
 import com.example.order_service.producer.OrderProducer;
 import com.example.order_service.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +21,7 @@ import java.util.UUID;
 public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderProducer orderProducer;
+    private final NotificationHandler notificationHandler;
 
     @Transactional
     public String createOrder(OrderRequest request) {
@@ -48,15 +52,47 @@ public class OrderService {
     }
 
     @Transactional
-    public void updateOrderStatus(String orderId, String status) {
+    public void cancelOrderStatus(String orderId, StatusCode statusCode) {
+        try {
+            // 1. Đọc dữ liệu mới nhất (bao gồm cả giá trị version hiện tại)
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
+
+            // 2. Kiểm tra trạng thái nghiêm ngặt
+            // Nếu một luồng trước đó đã đổi sang CANCELLED, các luồng sau sẽ bị chặn ngay tại đây
+            if ("PENDING".equals(order.getStatus())) {
+
+                order.setStatus("CANCELLED");
+
+                // 3. Ép Hibernate kiểm tra @Version dưới DB ngay lập tức
+                orderRepository.saveAndFlush(order);
+
+                // 4. Gửi thông báo (Chỉ luồng chiến thắng cuộc đua version mới chạm được đến dòng này)
+                sendNotification(order.getUserId(), order.getId(), order.getProductId(), statusCode.getDescription());
+            }
+
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // 5. Bắt ngoại lệ khóa lạc quan (Xung đột Version)
+            // Luồng chạy vào đây nghĩa là nó đã thua cuộc đua đồng thời.
+            // Chúng ta chủ động "nuốt" ngoại lệ này hoặc log lại, vì DB đã được luồng trước cập nhật đúng.
+            // Tuyệt đối không gọi sendNotification ở đây.
+            log.warn("Đơn hàng {} đã được một tiến trình khác xử lý hủy trước đó.", orderId);
+        }
+    }
+
+    @Transactional
+    public void completeOrderStatus(String orderId, StatusCode statusCode) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy đơn hàng"));
-
-        // Chỉ cập nhật nếu đơn hàng chưa bị hủy trước đó (Idempotency)
-        if (!order.getStatus().startsWith("CANCELLED")) {
-            order.setStatus(status);
+        if (order.getStatus().equals("PENDING")){
+            order.setStatus("COMPLETED");
             orderRepository.save(order);
-            log.info("Cập nhật trạng thái Order {} sang {}", orderId, status);
+            sendNotification(order.getUserId(),order.getId(),order.getProductId(),statusCode.getDescription());
         }
+    }
+
+    public void sendNotification(String userId, String orderId, String productId, String message) {
+        String notification = String.format("Đơn hàng %s gồm sản phẩm %s - Trạng thái %s",orderId,productId,message);
+        notificationHandler.pushNotification(userId,notification);
     }
 }

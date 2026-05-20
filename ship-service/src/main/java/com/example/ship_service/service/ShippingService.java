@@ -1,6 +1,6 @@
 package com.example.ship_service.service;
 
-import com.example.event_library.*;
+import com.example.event_library.events.*;
 import com.example.ship_service.entity.ShippingSnapshot;
 import com.example.ship_service.repository.ShippingRepository;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +48,7 @@ public class ShippingService {
             finalMessage = "Đơn hàng thất bại do: " +
                     ("FAILED".equals(sn.getPayStatus()) ? "Lỗi thanh toán. " : "") +
                     ("FAILED".equals(sn.getRepoStatus()) ? "Lỗi kho bãi." : "");
+            // Thất bại cái gì thì in ra cái đó
             log.warn("❌ ĐƠN HÀNG THẤT BẠI VỚI ID: {}. Lý do: {}", orderId, finalMessage);
             sendStatus("ship-fail", orderId, finalStatus, finalMessage);
         }
@@ -65,6 +66,9 @@ public class ShippingService {
 
         // kafkaTemplate.send trả về một CompletableFuture
         var future = kafkaTemplate.send(topic, orderId, event);
+        // Thêm orderId để đảm bảo được phân đúng làn dữ liệu, đảm bảo order của từng msg
+        // Tránh việc thứ tự lúc gửi bị xáo trộn với lúc nhận (Gửi 1-2-3-4 thì Đảm bảo nhận 1-2-3-4)
+        // Do cách hoạt động theo partition của Kafka hoạt động theo tính song song
 
         future.whenComplete((result, ex) -> {
             if (ex == null) {

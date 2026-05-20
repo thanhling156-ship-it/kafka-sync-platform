@@ -1,7 +1,7 @@
 package com.example.pay_service.service;
 
-import com.example.event_library.OrderCreatedEvent;
-import com.example.event_library.PayStatusEvent;
+import com.example.event_library.events.PayStatusEvent;
+import com.example.event_library.events.OrderCreatedEvent;
 import com.example.pay_service.entity.PaymentReserve;
 import com.example.pay_service.entity.User;
 import com.example.pay_service.repository.PaymentReserveRepository;
@@ -12,7 +12,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.Optional;
 
 @Service
@@ -53,19 +52,19 @@ public class PayService {
                 reserve.setStatus("PENDING");
                 log.info("✅ Đã tạo bản ghi RESERVE cho đơn hàng: {}", event.getOrderId());
                 // Bắn tin vào topic Success để Ship Service tổng hợp
-                sendStatus("pay-success-topic", reserve, "Enough Money");
+                sendStatus("pay-success", reserve, "Enough Money");
             } else {
                 // --- NHÁNH THẤT BẠI: HẾT TIỀN---
                 reserve.setStatus("FAILED");
                 log.warn("❌ HẾT TIỀN (Reserve fail) cho đơn: {}", event.getOrderId());
                 // Bắn tin vào topic Fail để Ship Service tổng hợp
-                sendStatus("pay-fail-topic", reserve, "Out of Money");
+                sendStatus("pay-fail", reserve, "Out of Money");
             }
             // Tạo bản ghi giữ chỗ
             paymentReserveRepository.save(reserve);
         } catch (Exception e) {
             log.error("💥 Lỗi xử lý Reserve tiền cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("pay-fail-topic", null, "System error: " + e.getMessage());
+            sendStatus("pay-fail", null, "System error: " + e.getMessage());
         }
     }
 

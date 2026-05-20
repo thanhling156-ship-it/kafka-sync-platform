@@ -1,6 +1,6 @@
 package com.example.pay_service.consumer;
 
-import com.example.event_library.*;
+import com.example.event_library.events.*;
 import com.example.pay_service.service.PayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

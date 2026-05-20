@@ -1,7 +1,7 @@
 package com.example.order_service.producer;
 
+import com.example.event_library.events.OrderCreatedEvent;
 import com.example.order_service.entity.Order;
-import com.example.event_library.OrderCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -22,8 +22,6 @@ public class OrderProducer {
     public void publishOrderCreated(Order order) {
         // 1. Đóng gói Fat Event từ thông tin của Order Entity
         OrderCreatedEvent event = OrderCreatedEvent.builder()
-
-
                 .orderId(order.getId())
                 .userId(order.getUserId())
                 .productId(order.getProductId())

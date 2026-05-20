@@ -30,12 +30,15 @@ public class Order {
     private Double totalPrice;//được tính từ orderRequest
 
     @Column(nullable = false)
-    private String status; // PENDING, CONFIRMED, CANCELLED_..., SHIPPING
+    private String status; // PENDING, CANCELLED, SUCCESS
 
-    @Version
-    private Long version; // Optimistic Locking - Giúp tránh lỗi race condition
+    @Version // Ép DB phải rollback do sai version => ngăn được việc chỉ send 1 lần duy nhất
+    // Phải đểlệnh save trước hàm kafka.send()
+    private Long version; // Optimistic Locking - Giúp tránh lỗi race condition và đảm bảo chỉ thay đổi CANCELLED 1 lần duy nhất
 
     private String address;
+
+    private String reason;
 
     private String number;
 

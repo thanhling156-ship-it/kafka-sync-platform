@@ -1,4 +1,4 @@
-package com.example.event_library;
+package com.example.event_library.events;
 
 
 import lombok.*;
