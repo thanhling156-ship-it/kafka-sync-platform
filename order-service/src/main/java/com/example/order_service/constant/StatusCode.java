@@ -4,7 +4,7 @@ public enum StatusCode {
     // 1. Khai báo các đối tượng và truyền giá trị "ruột" vào cạnh tên
     REPO_FAIL("Lỗi kho hàng"),
     PAY_FAIL("Lỗi giao dịch"),
-    SHIP_SUCCESS("Thành công ( All-success )"); // Phải có dấu chấm phẩy (;) ở cuối danh sách
+    SHIP_SUCCESS("Đơn hàng đã được ghi nhận. Đang trong quá trình vận chuyển ... "); // Phải có dấu chấm phẩy (;) ở cuối danh sách
 
     // 2. Biến dùng để hứng và lưu trữ giá trị "ruột"
     private final String description;

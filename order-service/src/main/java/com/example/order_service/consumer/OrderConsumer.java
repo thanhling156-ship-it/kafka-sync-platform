@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import static com.example.event_library.topics.EventTopics.*;
+
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -23,8 +25,8 @@ public class OrderConsumer {
      * 1. NHẬN LỆNH HỦY ĐƠN DO HẾT HÀNG (Từ Repo Service)
      * Khi kho báo không đủ hàng để giữ (Reserve failed).
      */
-    @KafkaListener(topics = EventTopics.REPO_FAIL, groupId = "order-group")
-    public void handleStockFailed(RepoStatusEvent event) {
+    @KafkaListener(topics = REPO_FAIL, groupId = "order-group")
+    public void handleRepositoryFailed(RepoStatusEvent event) {
         log.warn("📦❌ Hết hàng trong kho - OrderID: {}. Đang hủy đơn hàng...", event.getOrderId());
         // OrderService chỉ cập nhật trạng thái đơn hàng của chính nó
         orderService.cancelOrderStatus(event.getOrderId(), StatusCode.REPO_FAIL);
@@ -34,14 +36,14 @@ public class OrderConsumer {
      * 2. NHẬN LỆNH HỦY ĐƠN DO THANH TOÁN LỖI (Từ Pay Service)
      * Khách hết tiền hoặc lỗi giao dịch -> Hủy đơn hàng.
      */
-    @KafkaListener(topics = EventTopics.PAY_FAIL, groupId = "order-group")
+    @KafkaListener(topics = PAY_FAIL, groupId = "order-group")
     public void handlePaymentFailed(PayStatusEvent event) {
         log.warn("💳❌ Thanh toán thất bại - OrderID: {}. Đang hủy đơn hàng...", event.getOrderId());
         orderService.cancelOrderStatus(event.getOrderId(),  StatusCode.PAY_FAIL);
     }
 
-    @KafkaListener(topics = EventTopics.SHIP_SUCCESS, groupId = "order-group")
-    public void handlePaymentFailed(ShipCreatedEvent event) {
+    @KafkaListener(topics = SHIP_SUCCESS, groupId = "order-group")
+    public void handleShipSuccess(ShipCreatedEvent event) {
         log.info("🚚✅ Giao hàng thành công - OrderID: {}. Tiến hành cập nhật trạng thái đơn hàng...", event.getOrderId());
         orderService.completeOrderStatus(event.getOrderId(), StatusCode.SHIP_SUCCESS);
     }

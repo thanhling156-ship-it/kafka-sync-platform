@@ -45,9 +45,4 @@ public class Order {
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
-
-    // Helper method để kiểm tra xem đơn hàng đã ở trạng thái cuối chưa
-    public boolean isFinalState() {
-        return this.status.startsWith("CANCELLED") || this.status.equals("SHIPPED");
-    }
 }

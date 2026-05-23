@@ -37,12 +37,14 @@ public class ShippingService {
         // 3. Quyết định trạng thái cuối cùng
         String finalStatus;
         String finalMessage;
+        String userId = sn.getUserId();
+        String productId = sn.getProductId();
 
         if (sn.isAllSuccess()) {
             finalStatus = "SUCCESS";
             finalMessage = "Đơn hàng đã sẵn sàng giao.";
             log.info("✅ ĐƠN HÀNG ĐÃ ĐƯỢC TẠO THÀNH CÔNG VỚI ID: {}", orderId);
-            sendStatus("ship-success", orderId, finalStatus, finalMessage);
+            sendStatus("ship-success",userId ,orderId, productId,finalStatus, finalMessage);
         } else {
             finalStatus = "FAILED";
             finalMessage = "Đơn hàng thất bại do: " +
@@ -50,17 +52,19 @@ public class ShippingService {
                     ("FAILED".equals(sn.getRepoStatus()) ? "Lỗi kho bãi." : "");
             // Thất bại cái gì thì in ra cái đó
             log.warn("❌ ĐƠN HÀNG THẤT BẠI VỚI ID: {}. Lý do: {}", orderId, finalMessage);
-            sendStatus("ship-fail", orderId, finalStatus, finalMessage);
+            sendStatus("ship-fail", userId, orderId, productId, finalStatus, finalMessage);
         }
 
     }
 
-    private void sendStatus(String topic, String orderId, String status, String message) {
+    private void sendStatus(String topic, String userId, String orderId, String productId, String status, String message) {
         // Lưu ý: Đổi RepoStatusEvent thành ShipCreatedEvent cho đúng kiểu dữ liệu
         ShipCreatedEvent event = ShipCreatedEvent.builder()
                 .orderId(orderId) // Ép kiểu nếu OrderId trong Event là Long
+                .userId(userId)
                 .status(status)
                 .message(message)
+                .productCode(productId)
                 .createdAt(java.time.LocalDateTime.now())
                 .build();
 

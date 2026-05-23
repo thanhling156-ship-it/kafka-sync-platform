@@ -21,6 +21,11 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  # Cấu hình Redis
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
   kafka:
     # SAI: kafka:29092 (Cổng nội bộ của Docker)

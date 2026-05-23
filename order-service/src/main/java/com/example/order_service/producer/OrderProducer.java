@@ -1,6 +1,7 @@
 package com.example.order_service.producer;
 
 import com.example.event_library.events.OrderCreatedEvent;
+import com.example.event_library.topics.EventTopics;
 import com.example.order_service.entity.Order;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +9,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
+
+import static com.example.event_library.topics.EventTopics.ORDER_CREATED;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -35,7 +38,7 @@ public class OrderProducer {
         // 2. Gửi đi với Key là OrderId
         // Việc dùng OrderId làm Key cực kỳ quan trọng để các event sau này
         // (như Payment thành công) đi đúng vào cùng 1 Partition.
-        kafkaTemplate.send("order-created", order.getId(), event)
+        kafkaTemplate.send(ORDER_CREATED, order.getId(), event)
                 .whenComplete((result, ex) -> {
                     if (ex == null) {
                         log.info("✅ Fat Event đã lên kệ Kafka! OrderId: {} | Partition: {}",

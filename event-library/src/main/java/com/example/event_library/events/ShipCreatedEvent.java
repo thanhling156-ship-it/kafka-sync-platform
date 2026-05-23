@@ -13,6 +13,8 @@ public class ShipCreatedEvent {
     // 1. Định danh (Bắt buộc)
     private String orderId;
 
+    private String userId;
+
     // 2. Trạng thái quyết định (Bắt buộc)
     // Giá trị: "SUCCESS" hoặc "FAILED"
     private String status;
