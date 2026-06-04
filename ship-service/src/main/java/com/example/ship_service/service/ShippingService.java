@@ -39,12 +39,14 @@ public class ShippingService {
         String finalMessage;
         String userId = sn.getUserId();
         String productId = sn.getProductId();
+        int  quantity = sn.getQuantity();
+        double totalAmount = sn.getAmount();
 
         if (sn.isAllSuccess()) {
             finalStatus = "SUCCESS";
             finalMessage = "Đơn hàng đã sẵn sàng giao.";
             log.info("✅ ĐƠN HÀNG ĐÃ ĐƯỢC TẠO THÀNH CÔNG VỚI ID: {}", orderId);
-            sendStatus("ship-success",userId ,orderId, productId,finalStatus, finalMessage);
+            sendStatus("ship-success",userId ,orderId, productId, quantity,totalAmount, finalStatus, finalMessage);
         } else {
             finalStatus = "FAILED";
             finalMessage = "Đơn hàng thất bại do: " +
@@ -52,12 +54,12 @@ public class ShippingService {
                     ("FAILED".equals(sn.getRepoStatus()) ? "Lỗi kho bãi." : "");
             // Thất bại cái gì thì in ra cái đó
             log.warn("❌ ĐƠN HÀNG THẤT BẠI VỚI ID: {}. Lý do: {}", orderId, finalMessage);
-            sendStatus("ship-fail", userId, orderId, productId, finalStatus, finalMessage);
+            sendStatus("ship-fail" ,userId ,orderId, productId, quantity,totalAmount, finalStatus, finalMessage);
         }
 
     }
 
-    private void sendStatus(String topic, String userId, String orderId, String productId, String status, String message) {
+    private void sendStatus(String topic, String userId, String orderId, String productId, int quantity, double totalAmount, String status, String message) {
         // Lưu ý: Đổi RepoStatusEvent thành ShipCreatedEvent cho đúng kiểu dữ liệu
         ShipCreatedEvent event = ShipCreatedEvent.builder()
                 .orderId(orderId) // Ép kiểu nếu OrderId trong Event là Long
@@ -65,11 +67,13 @@ public class ShippingService {
                 .status(status)
                 .message(message)
                 .productCode(productId)
+                .quantity(quantity)
+                .totalAmount(totalAmount)
                 .createdAt(java.time.LocalDateTime.now())
                 .build();
 
         // kafkaTemplate.send trả về một CompletableFuture
-        var future = kafkaTemplate.send(topic, orderId, event);
+        var future = kafkaTemplate.send(topic, event);
         // Thêm orderId để đảm bảo được phân đúng làn dữ liệu, đảm bảo order của từng msg
         // Tránh việc thứ tự lúc gửi bị xáo trộn với lúc nhận (Gửi 1-2-3-4 thì Đảm bảo nhận 1-2-3-4)
         // Do cách hoạt động theo partition của Kafka hoạt động theo tính song song

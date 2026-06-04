@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -106,6 +107,7 @@ public class OrderService {
         }
     }
 
+    @Async
     public void sendNotification(String userId, String orderId, String productId, String message) {
         String notification = String.format("Đơn hàng %s gồm sản phẩm %s - Trạng thái %s",orderId,productId,message);
         notificationHandler.pushNotification(userId,notification);

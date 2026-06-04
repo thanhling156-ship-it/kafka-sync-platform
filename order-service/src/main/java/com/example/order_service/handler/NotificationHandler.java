@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
@@ -14,34 +15,43 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class NotificationHandler extends TextWebSocketHandler {
+
     // Lưu theo K-V : UserID - Session
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    // Hàm thụ động
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         String userId = extractUserId(session);
-        sessions.put(userId, session);
-        System.out.println("New connection for userId: " + userId);
+
+        // GIẢI PHÁP 1: Bọc session bằng Decorator để đảm bảo gửi tin bất đồng bộ an toàn (Thread-safe)
+        // Tham số: session, thời gian chờ tối đa (ms), dung lượng bộ đệm tối đa (bytes)
+        WebSocketSession safeSession = new ConcurrentWebSocketSessionDecorator(session, 5000, 65536);
+
+        sessions.put(userId, safeSession);
+
+        // GIẢI PHÁP 2: Thay System.out bằng log.info (Không block luồng CPU)
+        log.info("New connection established for userId: {}", userId);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         String userId = extractUserId(session);
         sessions.remove(userId);
-        System.out.println("Connection closed for userId: " + userId);
+        log.info("Connection closed for userId: {}, Status: {}", userId, status);
     }
 
-    // Hàm chủ động
-    public void pushNotification(String userId, String message) { // Đã bỏ 'throws IOException'
+    // Hàm chủ động push notification từ Kafka hoặc Redis Listener
+    public void pushNotification(String userId, String message) {
         WebSocketSession session = sessions.get(userId);
         if (session != null && session.isOpen()) {
             try {
+                // Nhờ có Decorator ở trên, lệnh này bây giờ có thể xếp hàng gửi an toàn, không sợ bị ghi đè luồng
                 session.sendMessage(new TextMessage(message));
             } catch (IOException e) {
-                // Bắt lỗi tại đây và ghi log lại để hệ thống không bị sập
                 log.error("🚨 Lỗi khi gửi tin nhắn WebSocket cho User {}: {}", userId, e.getMessage());
             }
+        } else {
+            log.warn("⚠️ Không tìm thấy kết nối WebSocket đang mở cho User: {}", userId);
         }
     }
 

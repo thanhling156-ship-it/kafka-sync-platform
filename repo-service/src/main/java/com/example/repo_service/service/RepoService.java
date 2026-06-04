@@ -43,6 +43,12 @@ public class RepoService {
             // 1. Tìm sản phẩm dựa trên ProductCode từ Event
             Product product = productRepository.findByProductCode(event.getProductId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm: " + event.getProductId()));
+
+            Double totalPrice = event.getTotalPrice();
+            if ( product.getPrice() * event.getQuantity() != totalPrice ) {
+                log.warn("❌ Có sự sai lệch thông số {} trong sản phẩm {} ", "GIÁ SẢN PHẨM", event.getProductId());
+            }
+
             long totalQuantityForOrder = stockReserveRepository.sumQuantityByProductCodeAndStatus(event.getProductId(),"PENDING");
             // 2. Kiểm tra tồn kho (Sử dụng hàm hasEnoughStock có sẵn)
             StockReserve reserve = StockReserve.builder()
@@ -88,7 +94,7 @@ public class RepoService {
                 .productId(reserve.getProductCode())
                 .quantity(reserve.getQuantity())
                 .build();
-        kafkaTemplate.send(topic, reserve.getOrderId() ,event);
+        kafkaTemplate.send(topic, event);
     }
 
     @Transactional

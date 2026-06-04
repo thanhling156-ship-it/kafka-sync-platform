@@ -2,6 +2,7 @@ package com.example.rec_service.consumer;
 
 import com.example.event_library.events.InternalCommunicationForRecommendation;
 import com.example.event_library.events.ShipCreatedEvent;
+import com.example.rec_service.service.PredictionService;
 import com.example.rec_service.service.RecommendService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,6 +16,7 @@ import static com.example.event_library.topics.EventTopics.SHIP_SUCCESS;
 @RequiredArgsConstructor
 public class RecommendConsumer {
     private final RecommendService recommendService;
+    private final PredictionService predictionService;
     @KafkaListener(topics = SHIP_SUCCESS, groupId = "rec-group")
     public void requestRecommendationForOrder(ShipCreatedEvent event) {
         if(event.getProductCode() == null){
@@ -22,6 +24,7 @@ public class RecommendConsumer {
         }
         log.info("📥 [Trace] Đã nhận sự kiện giao hàng thành công, chuẩn bị xử lý gợi ý cho sản phẩm: {}", event.getProductCode());
         recommendService.receiveConfirmation(event.getUserId(), event.getProductCode());
+        predictionService.notificationAnomaly(event);
     }
 
     @KafkaListener(topics = "requestRecommendation", groupId = "rec-group")

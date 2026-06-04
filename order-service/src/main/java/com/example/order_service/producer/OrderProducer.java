@@ -38,7 +38,7 @@ public class OrderProducer {
         // 2. Gửi đi với Key là OrderId
         // Việc dùng OrderId làm Key cực kỳ quan trọng để các event sau này
         // (như Payment thành công) đi đúng vào cùng 1 Partition.
-        kafkaTemplate.send(ORDER_CREATED, order.getId(), event)
+        kafkaTemplate.send(ORDER_CREATED, event)
                 .whenComplete((result, ex) -> {
                     if (ex == null) {
                         log.info("✅ Fat Event đã lên kệ Kafka! OrderId: {} | Partition: {}",

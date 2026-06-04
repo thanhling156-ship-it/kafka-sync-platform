@@ -9,18 +9,20 @@ spring:
       server:
         webflux: # ĐÂY LÀ CHỖ CẮM CHUẨN MỚI
           routes:
-            - id: identity-public
-              uri: lb://identity-service
-              order: -1 # THÊM DÒNG NÀY: Số càng nhỏ ưu tiên càng cao
-              predicates:
-                - Path=/identity/api/v1/auth/**
-              filters:
-                - StripPrefix=1
 
+            # 2. Định tuyến cho dịch vụ Sản phẩm (Product)
             - id: product-route
               uri: lb://product-service
+              order: 2
               predicates:
                 - Path=/api/v1/products/**
+
+            # 3. Định tuyến cho dịch vụ Đơn hàng (Order)
+            - id: order-route
+              uri: lb://order-service
+              order: 3
+              predicates:
+                - Path=/api/v1/orders/**
 
       # --- CẤU HÌNH HẠ TẦNG (Discovery) ---
       discovery:
@@ -30,7 +32,7 @@ spring:
 
 # 🔑 Cấu hình JWT (Dùng để filter hoặc trích xuất thông tin nếu cần)
 jwt:
-  secret: "day_la_cai_key_bi_mat_sieu_cap_vjp_pro_2026_it_nhat_32_ky_tu"
+  secret: "ShopeeSieuBaoMatChuanMicroservice2026"
 
 eureka:
   client:

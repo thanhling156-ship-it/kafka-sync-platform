@@ -85,7 +85,7 @@ public class PayService {
                 .message(message)
                 .totalPrice(reserve.getAmount())
                 .build();
-        kafkaTemplate.send(topic, reserve.getOrderId() ,statusEvent);
+        kafkaTemplate.send(topic,statusEvent);
     }
 
     @Transactional
