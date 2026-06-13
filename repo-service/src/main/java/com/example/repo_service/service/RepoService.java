@@ -40,40 +40,50 @@ public class RepoService {
         }
          */
         try {
-            // 1. Tìm sản phẩm dựa trên ProductCode từ Event
+            // 1. Tìm sản phẩm
             Product product = productRepository.findByProductCode(event.getProductId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm: " + event.getProductId()));
-
+        
+            // FIX: Dùng Long để nhận giá trị null an toàn, sau đó ép kiểu sang long
+            Long rawQuantity = stockReserveRepository.sumQuantityByProductCodeAndStatus(event.getProductId(), "PENDING");
+            long totalQuantityForOrder = (rawQuantity != null) ? rawQuantity : 0L;
+        
+            // Cảnh báo: So sánh Double bằng != rất rủi ro do sai số dấu phẩy động.
+            // Nên cân nhắc dùng BigDecimal hoặc so sánh với một ngưỡng sai số (epsilon).
             Double totalPrice = event.getTotalPrice();
-            if ( product.getPrice() * event.getQuantity() != totalPrice ) {
+            if (Math.abs((product.getPrice() * event.getQuantity()) - totalPrice) > 0.001) {
                 log.warn("❌ Có sự sai lệch thông số {} trong sản phẩm {} ", "GIÁ SẢN PHẨM", event.getProductId());
             }
-
-            long totalQuantityForOrder = stockReserveRepository.sumQuantityByProductCodeAndStatus(event.getProductId(),"PENDING");
-            // 2. Kiểm tra tồn kho (Sử dụng hàm hasEnoughStock có sẵn)
+        
             StockReserve reserve = StockReserve.builder()
                     .orderId(event.getOrderId())
                     .productCode(event.getProductId())
                     .quantity(event.getQuantity())
                     .build();
-            if (product.hasEnoughStock(event.getQuantity()+totalQuantityForOrder)) {
-                // --- NHÁNH THÀNH CÔNG: CHỈ RESERVE HÀNG---
+        
+            if (product.hasEnoughStock(event.getQuantity() + totalQuantityForOrder)) {
                 reserve.setStatus("PENDING");
                 log.info("✅ Đã tạo bản ghi RESERVE cho đơn hàng: {}", event.getOrderId());
-                // Bắn tin vào topic Success để Ship Service tổng hợp
                 sendStatus(EventTopics.REPO_SUCCESS, reserve, "In Stock");
             } else {
-                // --- NHÁNH THẤT BẠI: HẾT HÀNG ---
                 reserve.setStatus("FAILED");
                 log.warn("❌ HẾT HÀNG (Reserve fail) cho đơn: {}", event.getOrderId());
-                // Bắn tin vào topic Fail để Ship Service tổng hợp
                 sendStatus(EventTopics.REPO_FAIL, reserve, "Out of Stock");
             }
-            // Tạo bản ghi giữ chỗ
+            
             stockReserveRepository.save(reserve);
+        
         } catch (Exception e) {
             log.error("💥 Lỗi xử lý Reserve hàng cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus(EventTopics.REPO_FAIL, null, "System error: " + e.getMessage());
+            
+            // FIX: Tạo một đối tượng lỗi thay vì truyền null
+            StockReserve errorReserve = StockReserve.builder()
+                    .orderId(event.getOrderId())
+                    .productCode(event.getProductId())
+                    .status("FAILED")
+                    .build();
+                    
+            sendStatus(EventTopics.REPO_FAIL, errorReserve, "System error: " + e.getMessage());
         }
     }
 
