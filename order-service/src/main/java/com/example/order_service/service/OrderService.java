@@ -80,8 +80,8 @@ public class OrderService {
         } catch (ObjectOptimisticLockingFailureException e) {
             // 5. Bắt ngoại lệ khóa lạc quan (Xung đột Version)
             // Luồng chạy vào đây nghĩa là nó đã thua cuộc đua đồng thời.
-            // Chúng ta chủ động "nuốt" ngoại lệ này hoặc log lại, vì DB đã được luồng trước cập nhật đúng.
-            // Tuyệt đối không gọi sendNotification ở đây.
+            // Nếu chỉ là ghi xuống đơn hàng thông thường thì save là an toàn
+            // Còn ở đây có thêm side action, mặc dù sẽ báo lỗi nhưng action đó đã được thực hiện
             log.warn("Đơn hàng {} đã được một tiến trình khác xử lý hủy trước đó.", orderId);
         }
     }
