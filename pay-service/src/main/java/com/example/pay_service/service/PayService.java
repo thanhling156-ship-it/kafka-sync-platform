@@ -32,7 +32,7 @@ public class PayService {
             private String productId; // ID hoặc mã sản phẩm để trừ kho
             private Integer quantity;  // Số lượng khách đặt
             private Double totalPrice;
-            private String address;    // Thông tin này Repo có thể không dùng nhưng vẫn có trong Fat Event
+            private String address;
             private String phone;
         }
          */
@@ -40,7 +40,8 @@ public class PayService {
             // 1. Tìm người dùng dựa trên UserId từ Event
             User user = userRepository.findByUserId(event.getUserId())
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng: " + event.getUserId()));
-            Double totalPendingForUser = paymentReserveRepository.sumAmountByUserIdAndStatus(event.getUserId(), "PENDING");
+            Double rawSum = paymentReserveRepository.sumAmountByUserIdAndStatus(event.getUserId(), "PENDING");
+            double totalPendingForUser = (rawSum != null) ? rawSum : 0.0;
             // 2. Kiểm tra số dư (Sử dụng hàm hasEnoughBalance có sẵn)
             PaymentReserve reserve = PaymentReserve.builder()
                     .orderId(event.getOrderId())
@@ -64,7 +65,14 @@ public class PayService {
             paymentReserveRepository.save(reserve);
         } catch (Exception e) {
             log.error("💥 Lỗi xử lý Reserve tiền cho đơn {}: {}", event.getOrderId(), e.getMessage());
-            sendStatus("pay-fail", null, "System error: " + e.getMessage());
+
+            PaymentReserve errorReserve = PaymentReserve.builder()
+                    .orderId(event.getOrderId())
+                    .userId(event.getUserId()) // Có thể dùng event.getUserId() nếu đã biết
+                    .status("FAILED")
+                    .build();
+            
+            sendStatus("pay-fail", errorReserve, "System error: " + e.getMessage());
         }
     }
 
